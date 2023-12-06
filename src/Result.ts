@@ -21,12 +21,12 @@ export class Ok<T> extends ResultType<T> {
     return this.value;
   }
   unwrapErr(): Error {
-    return new Error("Result is Ok");
+    throw new Error("Result is Ok"); //TODO: should this be returned or thrown?
   }
   unwrapOr(_: T): T {
     return this.value;
   }
-  unwrapOrElse(fn: () => T): T {
+  unwrapOrElse(_: () => T): T {
     return this.value;
   }
 }
@@ -58,14 +58,22 @@ export class Err<T> extends ResultType<T> {
 export const Result = { Ok, Err };
 
 export async function intoResult<T>(
+  func: () => Promise<T>
+): Promise<ResultType<T>>;
+
+export async function intoResult<T>(
+  func: () => Promise<T | undefined>,
+  undefinedError: Error
+): Promise<ResultType<T>>;
+
+export async function intoResult<T>(
   func: () => Promise<T | undefined>,
   undefinedError?: Error
-): Promise<ResultType<T>> {
+): Promise<ResultType<T | undefined>> {
   try {
     const res = await func();
     if (res === undefined) {
-      if (undefinedError === undefined)
-        return new Result.Err(new Error("Result is undefined"));
+      if (undefinedError === undefined) return new Result.Ok(undefined);
       return new Result.Err(undefinedError);
     }
     return new Result.Ok(res);

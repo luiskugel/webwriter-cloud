@@ -1,31 +1,34 @@
-import { ResultType, Result, intoResult } from "./Result";
-import {
-  WWStorage,
-  WWStorageHash,
-  WWStorageList,
-  WWStorageQueue,
-  WWStorageSet,
-} from "./Storage";
+import { ResultType, Result, intoResult } from "../Result";
+import { AbstractStorage, Visibility } from "../Storage";
 import Dexie from "dexie";
+import { LocalQueue } from "./Queue";
+import { LocalSet } from "./Set";
+import { LocalList } from "./List";
+import { LocalHash } from "./Hash";
 
-export class WWLocalStorage extends WWStorage {
+export class LocalStorage extends AbstractStorage {
   private db: Dexie;
   private keyValue: Dexie.Table<{ key: string; value: string }, string>;
-  constructor(namespace_identifiers: string[]) {
-    super(namespace_identifiers);
+  constructor(visibility: Visibility, ...namespace_identifiers: string[]) {
+    super(visibility, ...namespace_identifiers);
     this.db = new Dexie(namespace_identifiers.join(":"));
 
     this.db.version(1).stores({
       keyValue: `key`,
-      lists: `key`,
-      sets: `key, entry`,
-      queues: `key, entry`,
+      sets: "[setID+value]",
+      queues: "[queueID+id]",
+      lists: "[listID+id]",
+      hashes: "[hashID+field]",
     });
 
     this.keyValue = this.db.table("keyValue");
   }
-  namespace(key: string): WWStorage {
-    return new WWLocalStorage([...this.namespace_identifiers, key]);
+  namespace(key: string): AbstractStorage {
+    return new LocalStorage(
+      this.visibility,
+      ...this.namespace_identifiers,
+      key
+    );
   }
   async get(key: string): Promise<ResultType<string>> {
     return intoResult(
@@ -75,10 +78,8 @@ export class WWLocalStorage extends WWStorage {
   }
   async increase(key: string, value: number): Promise<ResultType<number>> {
     try {
-      //TODO: make this atomic -> transaction
-      const res = await this.keyValue.get(key);
-      if (res === undefined) return new Result.Err(new Error("Key not found"));
-      const current = Number(res.value);
+      const val = (await this.keyValue.get(key))?.value ?? "0";
+      const current = Number(val);
       if (isNaN(current))
         return new Result.Err(new Error("Value is not a number"));
 
@@ -94,44 +95,40 @@ export class WWLocalStorage extends WWStorage {
       return new Result.Err(error);
     }
   }
-  List(): WWStorageList {
-    throw new Error("Method not implemented.");
+  List(key: string): LocalList {
+    return new LocalList(
+      this.namespace_identifiers,
+      key,
+      this.db.table("lists")
+    );
   }
-  Queue(): WWStorageQueue {
-    throw new Error("Method not implemented.");
+  Queue(key: string): LocalQueue {
+    return new LocalQueue(
+      this.namespace_identifiers,
+      key,
+      this.db.table("queues")
+    );
   }
-  Set(): WWStorageSet {
-    throw new Error("Method not implemented.");
+  Set(key: string): LocalSet {
+    return new LocalSet(this.namespace_identifiers, key, this.db.table("sets"));
   }
-  Hash(): WWStorageHash {
-    throw new Error("Method not implemented.");
+  Hash(key: string): LocalHash {
+    return new LocalHash(
+      this.namespace_identifiers,
+      key,
+      this.db.table("hashes")
+    );
   }
-}
-
-class WWLocalSet extends WWStorageSet {
-  private table: Dexie.Table<{ key: string; value: string }, string>;
-  constructor(
-    namespace_identifiers: string[],
+  subscribe(
     key: string,
-    table: Dexie.Table<{ key: string; value: string }, string>
-  ) {
-    super(namespace_identifiers, key);
-    this.table = table;
+    callback: (value: ResultType<string | null>) => any
+  ): void {
+    throw new Error("Method not implemented."); //TODO: Implement
   }
-
-  add(value: string): Promise<ResultType<void>> {
-    throw new Error("Method not implemented.");
-  }
-  remove(value: string): Promise<ResultType<void>> {
-    throw new Error("Method not implemented.");
-  }
-  has(value: string): Promise<ResultType<boolean>> {
-    throw new Error("Method not implemented.");
-  }
-  getAll(): Promise<ResultType<string[]>> {
-    throw new Error("Method not implemented.");
-  }
-  length(): Promise<ResultType<number>> {
-    throw new Error("Method not implemented.");
+  notify(key: string, callback: () => any): void {
+    throw new Error("Method not implemented."); //TODO: Implement
   }
 }
+
+//TODO: make this atomic -> transaction
+//TODO: check all methods for errors
